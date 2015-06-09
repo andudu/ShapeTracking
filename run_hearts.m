@@ -1,0 +1,79 @@
+
+
+% starting the matlab workers (no restriction on their number (up to 12))
+m = matlabpool('size');
+if (m==0)
+  matlabpool open
+end
+
+p = pwd;
+p1 = [p '/code'];
+addpath (p1)
+p2 = [p1 '/common'];
+addpath (p2)
+
+
+% loading the data
+cd data
+load SCN2_processed.mat
+cd ..
+
+% creating a mat file to store the results
+empty = [];
+save 'results/hearts/hearts_mat' 'empty'
+
+cd code
+  
+  % specify which slice to process
+  i = 5
+
+  sizes(1,1) = size(eval(sprintf('ocontour%d',i)),1);
+  temp = eval(sprintf('ocontour%d',i));
+  sizes(2,1) = size(temp(1:4:end,:),1);
+
+  bdryPts = [eval(sprintf('ocontour%d',i)); eval(sprintf('icontour%d',i))];
+  ctrlPts = bdryPts(1:4:end,:);
+  frames = eval(sprintf('heart_frames%d',i));
+
+
+  disp('Select a method:')
+  disp('0 - All')
+  disp('1 - ISR - homogeneous kernel')
+  disp('2 - ISR - nonhomogeneous kernel')
+  disp('3 - MAP')
+  reply = input('');
+  if (reply~=0&&reply~=1&&reply~=2&&reply~=3) 
+    error('Your input should be an integer between 0 and 3.')
+  end
+
+  if (reply==0||reply==1)
+    % setting the random stream
+    s = RandStream('mt19937ar','Seed',0)
+    RandStream.setGlobalStream(s)
+    [m_h x_h] = IS_Resample22(frames(:,:,end:-1:1),bdryPts,ctrlPts,sizes,40,[],30,30,0.1,10,5000);
+    save ('../results/hearts/hearts_mat','m_h','x_h','-append')
+    filename = sprintf('../results/hearts/lv_ISR_40_30_sl%d_',i);
+    track_video2(frames(:,:,end:-1:1),squeeze(mean(m_h(:,:,:,:),3)),[],sizes(1,1),filename,filename)
+  end
+
+  if (reply==0||reply==2)
+    s = RandStream('mt19937ar','Seed',0)
+    RandStream.setGlobalStream(s)
+    [m_nh x_nh] = IS_Resample22(frames(:,:,end:-1:1),bdryPts,ctrlPts,sizes,40,50,30,30,0.1,10,5000);
+    save ('../results/hearts/hearts_mat','m_nh','x_nh','-append')
+    filename = sprintf('../results/hearts/lv_ISR_405030_sl%d_',i);
+    % track_video2(frames(:,:,end:-1:1),squeeze(mean(m_nh(:,:,:,:),3)),squeeze(mean(x_nh(:,:,:,:),3)),sizes(1,1),filename,filename)
+    track_video2(frames(:,:,end:-1:1),squeeze(mean(m_nh(:,:,:,:),3)),[],sizes(1,1),filename,filename)
+  end
+
+  if (reply==0||reply==3)
+    s = RandStream('mt19937ar','Seed',0)
+    RandStream.setGlobalStream(s)
+    [m x] = track2_MAP2(frames(:,:,end:-1:1),bdryPts,ctrlPts,sizes,10,[],10,10,0.1,10,0.001,500,1);
+    save ('../results/hearts/hearts_mat','m','x','-append')
+    filename = sprintf('../results/hearts/lv_MAP_10_10_sl%d_',i);
+    track_video2(frames(:,:,end:-1:1),m,[],sizes(1,1),filename,filename)
+  end
+
+  cd ..
+

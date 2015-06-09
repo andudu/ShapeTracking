@@ -1,0 +1,72 @@
+function res = track_video(frames,m_average,x_average,movieName,frameName)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% res = track_video(frames,m_average,x_average,movieName,frameName)
+%
+% This function displays a sequence of images, and the corresponding boundaries and control points of the moving object. If a moviename and a filename is given, the function stores the result.
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if (~isempty(movieName))
+  mov = avifile([movieName,'.avi'], 'COMPRESSION', 'None', 'fps', 2,'VideoName', movieName);
+end
+lb = min(min(min(frames)));
+ub = max(max(max(frames)));
+
+f = figure(2);
+% set(f,'visible','off')
+colormap('gray')
+cla
+
+
+hold off
+j=0;
+m=1;
+for i=1:1:size(m_average,3)
+
+    hold off
+    % imagesc(frames(:,:,i),[lb ub])
+    imshow(frames(:,:,i),[lb ub],'Border','tight')
+    hold on
+    axis off
+    m=m+1;
+  
+   plot([m_average(:,1,i);m_average(1,1,i)],[m_average(:,2,i);m_average(1,2,i)],'Color',[0 1. 0.],'Linewidth',2)
+   if (~isempty(x_average))
+      plot(x_average(:,1,i),x_average(:,2,i), 'o', 'Color',[0 1. 0.],'Linewidth',2)
+   end
+   axis equal
+   pause(0.1)
+    
+    
+    if(~isempty(movieName))
+       % frm = getframe(gcf);     mov = addframe(mov,frm) ;
+       j=j+1;
+       name = sprintf('%s%d',frameName,j);
+       print ('-dpng', name)
+       print ('-dpsc2', name)
+       saveas (gcf,name,'fig')
+       im = imread([name '.png']);
+       frm = im2frame(im);
+       mov = addframe(mov,frm);
+       if (isempty(frameName))
+	  delete([name '.png']);
+          delete([name '.fig']);
+          delete([name '.ps']);
+       end
+    end
+    if (~isempty(frameName)&&isempty(movieName))
+      j=j+1;
+      name = sprintf('%s%d',frameName,j);
+      print ('-dpng' ,name)
+      print ('-dpsc2', name)
+      saveas (gcf,name,'fig')
+    end
+end
+
+
+if (~isempty(movieName))
+  mov = close(mov);
+end
+res = 0;
+set(f,'visible','on')

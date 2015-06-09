@@ -1,0 +1,262 @@
+ function  [m_average x_average parent] = track_CP_sd(frames,curves,ctrlPts,N,N_thr,Sigma,Sigma_0,dt,nofSteps,P,movieName)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% [m_average parent] = track_CP_sd(frames,curves,ctrlPts,N,N_thr,Sigma,Sigma_0,dt,nofSteps,P,movieName)
+%
+% This function implements a tracking algorithm based on control points. The dynamical model is split:
+% we assume that we have some estimate for the affine transformations, and we use them in the model
+%
+% INPUT: frames - a sequence of images
+%        curves - initial boundary points
+%        ctrlPts - control points
+%        N - the number of particles
+%        N_thr - the threshold number of particles
+%        Sigma - the sigma of the noise kernel
+%        Sigma_0 - the sigma of the deformation kernel
+%        dt - the timestep
+%        nofSteps - number of small deformations
+%        P - the affine transformation at time t
+%        movieName - the name of the movie
+%    
+% OUTPUT:m_average - stores the average of the particles for each time
+%        parent - the index of the parent particle
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%Some initial variables
+nofBdryPts = size(curves,1);
+nofCtrlPts = size(ctrlPts,1);
+nofFrames = size(frames(:,:,2:end),3);
+m_average = zeros(nofBdryPts,2,nofFrames);
+w_k = zeros(N,nofFrames);
+
+
+if (~isempty(movieName))
+  mov = avifile([movieName,'.avi'], 'COMPRESSION', 'None', 'fps', 1, 'VideoName', movieName);
+else 
+  mov=1;
+end
+
+%Calculating the parameters of the observation likelihood
+par_obs = parObsL(frames(:,:,1),curves,100,100,'block');
+
+par_obs(3,1) = 5;
+par_obs(4,1) = 5;
+
+
+%Displaying the first frame
+figure(1)
+colormap('gray')
+imagesc(frames(:,:,2))
+axis off
+hold on
+%Processing the first frame
+disp(sprintf('Processing frame 1')) 
+w_k(:,1) = ones(N,1)/N;
+m = curves;
+x = ctrlPts(:,:,1);
+alpha_k = zeros(nofCtrlPts,2,N);
+
+z2 = x(:,1).^2*ones(1,nofCtrlPts);
+dist =  z2 - 2*x(:,1)*x(:,1)' + z2' ;
+z2 = x(:,2).^2 *ones(1,nofCtrlPts) ;
+dist =  dist + z2 - 2* x(:,2)*x(:,2)' + z2' ;
+K_0 = exp(-dist/(2*Sigma_0*Sigma_0))/(2*pi*Sigma_0*Sigma_0);
+K_1 = exp(-dist/(2*Sigma*Sigma))/(2*pi*Sigma*Sigma);
+K_0_inv = inv(K_0);
+R = chol(K_1)*K_0_inv;
+disp(sprintf('The condition number of K_0 is %d',cond(K_0)))
+alpha_k = reshape(R'*randn(nofCtrlPts,2*N),nofCtrlPts,2,N);
+p = zeros(N,1);%this variable will store the probability for each particle
+
+% Find the edges in the video frames
+edges = zeros(size(frames));
+for i=1:nofFrames+1
+  edges(:,:,i) = edge(frames(:,:,i),'canny',0.5);
+end
+
+
+parfor k=1:N
+  m_k(:,:,k) = m;
+  x_k(:,:,k) = x;
+  %move
+  [m_k(:,:,k) x_k(:,:,k)] = move_CP_sd(m,x,P(:,:,1));
+  alpha_k(:,:,k) = R'*randn(nofCtrlPts,2);
+  %deform
+  x_k_new(:,:,k) = x_k(:,:,k);
+  for step = 1:nofSteps   
+      [m_k(:,:,k) x_k_new(:,:,k)]= deform_CP(m_k(:,:,k),x_k(:,:,k),x_k_new(:,:,k),alpha_k(:,:,k),Sigma,Sigma_0,dt);
+  end
+  x_k(:,:,k)  = x_k_new(:,:,k);
+
+
+
+%      title(strcat('Sigma\_cp=',sprintf('%d, ',Sigma_0),'Sigma\_ns=',sprintf('%d, ',Sigma),'dt=',sprintf('%d, ',dt),'nofSteps=',sprintf('%d',nofSteps)))
+%      plot(m_k(:,1,k),m_k(:,2,k),'b-','Linewidth',2)
+%      pause(0.5)
+%    
+%    plot(x_k_new(:,1,k),x_k_new(:,2,k),'ro','Linewidth',2)
+%    %pause(0.5)
+%      if(~isempty(movieName))
+%        if(mod(k,30)==0)
+%        frm = getframe(gcf);     mov = addframe(mov,frm) ;
+%        end
+%      end
+  %p(k,1)=p_obs_new(frames(:,:,2),m_k(:,:,k),p_max);    
+  %p(k,1)=p_obs_new(frames(:,:,2),m_k(:,:,k),cin,cout,varin,varout);
+
+ % p(k,1)=p_obs_01(frames(:,:,2),m_k(:,:,k),par_obs,'gaussian');
+
+ % p(k,1)=p_obs_01_block(frames(:,:,2),m_k(:,:,k),par_obs,'gaussian');
+  p(k,1)=logObsL_region(frames(:,:,2),m_k(:,:,k),par_obs,'block');
+
+end
+
+%  m_average = m_k;
+%  parent = 1;
+%  return
+
+p_max = max(p);
+%  p_max
+%  exp(p-p_max)
+w_k(:,1) = w_k(:,1).*(exp(p-p_max+100));
+%w_k(:,1) = w_k(:,1).*p;
+
+if (sum(w_k(:,1),1)==0)
+  error('All weights are zero.')
+end
+w_k(:,1) = w_k(:,1)/sum(w_k(:,1),1);
+
+
+
+% resample
+[m_k x_k_new w_k] = resample(m_k,x_k_new,w_k);
+
+
+m_average(:,1,1) = squeeze(m_k(:,1,:))*w_k(:,1);
+m_average(:,2,1) = squeeze(m_k(:,2,:))*w_k(:,1);
+
+x_average(:,1,1) = squeeze(x_k_new(:,1,:))*w_k(:,1);
+x_average(:,2,1) = squeeze(x_k_new(:,2,:))*w_k(:,1);
+
+%  [mx i] = max(w_k);
+%  m_average = m_k(:,:,i); 
+if (~isempty(movieName))
+    disp('Saving the frame')
+    frm = getframe(gcf);
+    %mov = addframe(mov,frm) ;
+end
+
+
+
+hold off
+imagesc(edges(:,:,2))
+axis off
+hold on
+title(strcat('Sigma\_cp=',sprintf('%d, ',Sigma_0),'Sigma\_ns=',sprintf('%d, ',Sigma),'dt=',sprintf('%d, ',dt),'nofSteps=',sprintf('%d',nofSteps)))
+plot(m_average(:,1),m_average(:,2),'r','Linewidth',2)
+if (~isempty(movieName))
+    disp('Saving the frame')
+    frm = getframe(gcf);
+    mov = addframe(mov,frm) ;
+end
+%  mov = close(mov);
+%      return
+x_k = x_k_new;
+parent = zeros(N,nofFrames-1);
+for i = 2:nofFrames
+  tic
+  disp(sprintf('Processing frame %d',i)) 
+
+  %determining the new box parameters
+  par_obs(8,1) = sum(m_average(:,1,i-1))/nofBdryPts;
+  par_obs(9,1) = sum(m_average(:,2,i-1))/nofBdryPts;
+
+
+  [m_k x_k w_k(:,i) alpha_k parent(:,i-1)] = update_CP_sd(frames(:,:,i+1),m_k,x_k,w_k(:,i-1),N,N_thr,Sigma,Sigma_0,dt,nofSteps,par_obs,edges(:,:,i+1),P(:,:,i)*inv(P(:,:,i-1)),mov);
+  %[w I] = max(w_k(:,i));max is too sensitive to a particular curve
+  %calculate the average
+  m_average(:,1,i) = squeeze(m_k(:,1,:))*w_k(:,i);
+  m_average(:,2,i) = squeeze(m_k(:,2,:))*w_k(:,i);
+
+  x_average(:,1,i) = squeeze(x_k(:,1,:))*w_k(:,i);
+  x_average(:,2,i) = squeeze(x_k(:,2,:))*w_k(:,i);
+
+
+
+%  m_average = m_k;
+%  parent = 1;
+%  return
+%  [mx j] = max(w_k(:,i));
+%  m_average(:,:,i) = m_k(:,:,j); 
+  toc
+%     plot(m_average(:,1,i),m_average(:,2,i),'r','Linewidth',2)
+  if (~isempty(movieName))
+    disp('Saving the frame')
+    frm = getframe(gcf);
+    %mov = addframe(mov,frm) ;
+  end
+
+    figure(1);colormap('gray')
+    hold off
+    imagesc(frames(:,:,i+1))
+    title(strcat('Sigma\_cp=',sprintf('%d, ',Sigma_0),'Sigma\_ns=',sprintf('%d, ',Sigma),'dt=',sprintf('%d, ',dt),'nofSteps=',sprintf('%d',nofSteps)))
+    axis off
+    hold on
+    plot(m_average(:,1,i),m_average(:,2,i),'r','Linewidth',2)
+    pause(0.5)
+
+  if (~isempty(movieName))
+    disp('Saving the frame')
+    frm = getframe(gcf);
+    mov = addframe(mov,frm) ;
+  end
+  
+end
+
+if (~isempty(movieName))
+  mov = close(mov);
+end
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                            Resampling function
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function [m_k_new x_k_new w_k_new] = resample(m_k,x_k,w_k)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% [m_k_new x_k_new w_k_new] = resample(m_k,x_k,w_k)
+%
+% a simple method for resampling the particles by sampling according to the 
+% distribution of the weights
+% unfortunately, this method does not allow parallelizing of the algorithm
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+N = size(m_k,3);
+m_k_new = zeros(size(m_k));
+x_k_new = zeros(size(x_k));
+%first construct the CDF
+%  c = zeros(N,1);
+%  c(1) = w_k(1);
+%  for i=2:N
+%    c(i) = c(i-1)+w_k(i);
+%  end
+c = cumsum(w_k);
+
+
+u = zeros(N,1);
+index = zeros(N,1);
+u_tilde = rand/N;
+i=1;
+for j = 1:N
+  u(j) = u_tilde+(j-1)/N;
+  while (u(j)>c(i))
+    i=i+1;
+  end
+  m_k_new(:,:,j) = m_k(:,:,i);%temp fix from i to i-1
+  x_k_new(:,:,j) = x_k(:,:,i);
+  index(j) = i+1;
+end
+w_k_new = ones(N,1)/N;
+end
+
+end

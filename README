@@ -1,0 +1,26 @@
+This repository contains code and data to regenerate results from the preprint "Modeling and Estimation of Shape Deformation for Topolgy-Preserving Shape Tracking" submitted to SIAM Journal of Imaging Science on May 3,2013 authored by Valentina Staneva and Laurent Younes.
+
+Tracking Scripts:
+-----------------
+run_sim1
+run_sim2
+run_hearts
+run_paramecium0
+run_paramecium
+run_fish
+
+
+Simulation functions:
+---------------------
+sim_ellipse
+sim_ellipse2
+
+You can run the tracking scripts in any order. You don't need to run the simulation functions separately, they will be called by run_sim1 and run_sim2.
+
+All the results will be stored in the initially empty results folder.
+
+Tested under Ubuntu 12.04 and Kubuntu 12.04, using MATLAB R2012a with Parallel Processing Toolbox.
+
+
+
+
