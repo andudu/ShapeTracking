@@ -7,7 +7,7 @@ run_sim2
 run_hearts
 run_paramecium0
 run_paramecium
-run_fish
+run_fish (!)
 
 
 Simulation functions:
@@ -15,7 +15,7 @@ Simulation functions:
 sim_ellipse
 sim_ellipse2
 
-You can run the tracking scripts in any order. You don't need to run the simulation functions separately, they will be called by run_sim1 and run_sim2.
+You don't need to run the simulation functions separately, they will be called by run_sim1 and run_sim2. All scripts except run_fish will work (run_fish requires fish_data.mat which could not be uploaded to github due to size limitations). Waiting for Large File Storage!
 
 All the results will be stored in the initially empty results folder.
 
